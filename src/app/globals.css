@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Kalan tüm eski CSS kurallarını silebilirsiniz */
+
+@layer base {
+  :root {
+    --background: 210 60% 99%; /* Çok Açık Gri */
+    --foreground: 210 20% 15%; /* Daha Koyu Gri */
+
+    --card: 0 0% 100%; /* Beyaz */
+    --card-foreground: 210 20% 15%; /* Daha Koyu Gri */
+
+    --popover: 0 0% 100%; /* Beyaz */
+    --popover-foreground: 210 20% 15%; /* Daha Koyu Gri */
+
+    --primary: 40 60% 50%; /* #CC9933 Altın */
+    --primary-foreground: 40 100% 10%; /* Koyu Kahve/Siyah (Altın Üzeri) */
+
+    --secondary: 210 40% 97%; /* Açık Gri (Belirgin) */
+    --secondary-foreground: 210 10% 35%; /* Daha Koyu Orta Gri */
+
+    --muted: 210 40% 97%; /* Açık Gri */
+    --muted-foreground: 210 10% 55%; /* Daha Koyu Orta Gri */
+
+    --accent: 40 60% 45%; /* #CC9933 Altın (Biraz Koyu) */
+    --accent-foreground: 40 100% 10%; /* Koyu Kahve/Siyah (Altın Üzeri) */
+
+    --destructive: 0 72% 51%; /* Biraz daha canlı kırmızı */
+    --destructive-foreground: 0 0% 99%; /* Çok Açık */
+
+    --border: 210 30% 88%; /* Belirgin Açık Gri */
+    --input: 210 30% 88%; /* Belirgin Açık Gri */
+    --ring: 40 60% 50%; /* #CC9933 Altın (Odak) */
+
+    --radius: 0.5rem; /* Shadcn Varsayılanı */
+  }
+
+  .dark {
+    /* Koyu tema için arka plan ve ön plan aynı kalır */
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Koyu temadaki altın rengini de güncelleyelim */
+    --primary: 40 60% 50%; /* #CC9933 Altın */
+    --primary-foreground: 40 100% 10%; /* Koyu tema için de güncelleyelim */
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    /* Koyu temadaki vurgu rengini de güncelleyelim */
+    --accent: 40 60% 45%; /* #CC9933 Altın (Biraz Koyu) */
+    --accent-foreground: 40 100% 10%; /* Koyu tema için de güncelleyelim */
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 40 60% 50%; /* #CC9933 Altın (Odak) */
+
+    /* Radius aynı kalır */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Font smoothing kaldırılabilir veya değiştirilebilir */
+    /* font-feature-settings: "rlig" 1, "calt" 1; */
+  }
+}
+
+/* Eski @theme inline ve :root/.dark oklch tanımlarını kaldır */
+
+/* Leaflet Routing Machine - Yol Tarifi Panelini Gizle */
+.leaflet-routing-container {
+  display: none !important;
+}
+
+/* Kalıcı Tooltip Görünürlüğünü Zorla */
+.leaflet-tooltip.custom-leaflet-tooltip {
+  opacity: 1 !important; /* Tamamen görünür yap */
+  display: block !important; /* Gizlenmesini engelle */
+  pointer-events: auto !important; /* Tıklama vb. olayları alabilmesini sağla (isteğe bağlı) */
+}
