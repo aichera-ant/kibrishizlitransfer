@@ -45,6 +45,7 @@ async function sendReservationConfirmationEmail(reservationData: any, reservatio
     const emailContent = {
       from: process.env.EMAIL_FROM || process.env.SMTP_USER,
       to: reservationData.customer_email,
+      bcc: 'info@cyprusfasttransport.com',
       subject: `✅ Rezervasyon Onayı - ${reservationCode}`,
       html: `
         <!DOCTYPE html>
