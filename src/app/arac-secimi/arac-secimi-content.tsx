@@ -506,7 +506,7 @@ export default function AracSecimiContent({
       payment_method: selectedPaymentMethod, // Use state here
       card_details: selectedPaymentMethod === 'card' ? {
         cardholder_name: formData.cardholderName,
-        card_number: formData.cardNumber, // Already unmasked by iMask
+        card_number: formData.cardNumber.replace(/\s/g, ''), // Boşlukları kaldır
         expiry_date: formData.expiryDate, // Already unmasked by iMask
         cvc: formData.cvc, // Already unmasked by iMask
       } : null, // Set to null if not card payment
@@ -560,8 +560,8 @@ export default function AracSecimiContent({
             userAddress: ''
           },
           urls: {
-            urlOk: `${window.location.origin}/rezervasyon-basarili?code=${reservationCode}&summary=${encodeURIComponent(JSON.stringify(summaryProps))}`,
-            urlFail: `${window.location.origin}/arac-secimi?error=payment_failed`
+            urlOk: `${window.location.origin}/rezervasyon-tamamla?payment_status=success&reservation_code=${reservationCode}`,
+            urlFail: `${window.location.origin}/rezervasyon-tamamla?payment_status=failed&reservation_code=${reservationCode}`
           },
           description: `${searchParams.pickupLocationName} - ${searchParams.dropoffLocationName} Transfer`
         };
