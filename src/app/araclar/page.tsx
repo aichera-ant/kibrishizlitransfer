@@ -15,7 +15,7 @@ const vehicles = [
     capacity: 6,
     luggage: '4-5 Orta Boy Valiz',
     features: ['Klima', 'Konforlu Koltuklar', 'Geniş İç Hacim'],
-    imageUrl: '/images/vehicles/mercedes-vito.png', // Replace with actual image path
+    imageUrl: '/mercedes-vito-siyah.jpg', // Correct image path
     priceRange: '1000 - 1500 TRY',
   },
   {
@@ -25,7 +25,7 @@ const vehicles = [
     capacity: 10,
     luggage: '8-10 Orta Boy Valiz',
     features: ['Klima', 'Geniş Bagaj Alanı', 'Rahat Yolculuk'],
-    imageUrl: '/images/vehicles/mercedes-sprinter.png', // Replace with actual image path
+    imageUrl: '/mercedes-sprinter-siyah.jpg', // Correct image path
     priceRange: '1800 - 2500 TRY',
   },
   {
@@ -35,7 +35,7 @@ const vehicles = [
     capacity: 3,
     luggage: '2-3 Orta Boy Valiz',
     features: ['Klima', 'Ekonomik Seçenek', 'Konforlu Sürüş'],
-    imageUrl: '/images/vehicles/sedan-passat.png', // Replace with actual image path
+    imageUrl: '', // No image available yet
     priceRange: '700 - 1000 TRY',
   },
   // Add more vehicles as needed
@@ -104,15 +104,6 @@ export default function AraclarPage() {
           </Card>
         ))}
       </div>
-
-      {/* Information about image paths */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-12 p-4 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-700">
-          <strong>Not:</strong> Araç görselleri için <code>{'kibris-frontend/public/images/vehicles/...'}</code> klasör yapısını kullanmanız ve ilgili görselleri buraya eklemeniz gerekmektedir. 
-          Örnek yollar: <code>/images/vehicles/mercedes-vito.png</code>, <code>/images/vehicles/mercedes-sprinter.png</code>.
-          Eğer bu yollar doğru değilse veya görseller mevcut değilse, placeholder&apos;lar gösterilecektir.
-        </div>
-      )}
     </div>
   );
 } 

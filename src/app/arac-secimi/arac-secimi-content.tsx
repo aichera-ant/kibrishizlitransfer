@@ -534,25 +534,91 @@ export default function AracSecimiContent({
 
     try {
       if (selectedPaymentMethod === 'card') {
-        console.log('[handleSubmit] Simulating card payment success for payload:', JSON.stringify(payload, null, 2));
-        // SANAL POS SİMÜLASYONU
-        // Gerçek entegrasyonda burada sanal POS'a istek atılır ve yanıt beklenir.
-        // Şimdilik direkt başarılı varsayıyoruz.
-        // Payload'da card_details zaten null olarak ayarlanmıştı eğer ödeme yöntemi kart değilse,
-        // kart ise dolu olacaktı. Ancak biz API'ye her zaman null göndereceğiz (API bunu zorunlu kılacak).
-        // Aslında, payload.card_details API'ye gönderilmeden önce null yapılmalı, 
-        // ya da API tarafında bu alan dikkate alınmamalı ve kaydedilmemeli.
-        // Mevcut payload.card_details (kart ise dolu, değilse null) API'ye gidiyor.
-        // API zaten card_details'i her zaman null yapıyor veritabanına yazarken.
+        console.log('[handleSubmit] Processing card payment via TIKO Edge Function');
+        
+        // TIKO Sanal POS entegrasyonu
+        const paymentData = {
+          orderData: {
+            orderId: reservationCode,
+            amount: totalPrice,
+            currency: selectedOption.currency,
+            installment: 0 // Şimdilik taksitsiz
+          },
+          cardData: {
+            cardName: formData.cardholderName,
+            cardNo: formData.cardNumber.replace(/\s/g, ''), // Boşlukları kaldır
+            cardCvv: formData.cvc,
+            cardExpireMonth: formData.expiryDate.split('/')[0],
+            cardExpireYear: formData.expiryDate.split('/')[1],
+            cardType: '' // Şimdilik boş, gerekirse kart türü tespit edilebilir
+          },
+          userInfo: {
+            userIp: '127.0.0.1', // Gerçek IP'yi almak için ek çalışma gerekebilir
+            userName: `${formData.firstName} ${formData.lastName}`,
+            userEmail: formData.email,
+            userPhone: formData.phone,
+            userAddress: ''
+          },
+          urls: {
+            urlOk: `${window.location.origin}/rezervasyon-basarili?code=${reservationCode}&summary=${encodeURIComponent(JSON.stringify(summaryProps))}`,
+            urlFail: `${window.location.origin}/arac-secimi?error=payment_failed`
+          },
+          description: `${searchParams.pickupLocationName} - ${searchParams.dropoffLocationName} Transfer`
+        };
 
-        // Simülasyon başarılı olduğu için API'ye rezervasyon oluşturma isteği gönderiliyor.
-        const response = await apiClient.post<{ code: string; [key: string]: unknown; }>('/reservations', payload);
-        if (response.data?.code) {
-          const summaryForRedirect = JSON.stringify(summaryProps);
-          const newReservationCode = response.data.code;
-          router.push(`/rezervasyon-basarili?code=${newReservationCode}&summary=${encodeURIComponent(summaryForRedirect)}`);
+        // Supabase Edge Function'a istek gönder
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://uxwzfghgqldhkkzsrlfu.supabase.co';
+        const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4d3pmZ2hncWxkaGtrenNybGZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU3ODE2MTgsImV4cCI6MjA2MTM1NzYxOH0.xAEZEE7zBqjcSDzREFFty5hHYSKLMVNRDTaFsHjTU9I';
+        
+        const paymentResponse = await fetch(`${supabaseUrl}/functions/v1/payment-process`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(paymentData)
+        });
+
+        if (!paymentResponse.ok) {
+          throw new Error('Ödeme işlemi başlatılamadı');
+        }
+
+        const paymentResult = await paymentResponse.json();
+        
+        if (paymentResult.success) {
+          // Önce rezervasyonu oluştur (ödeme pending durumunda)
+          const reservationPayload = {
+            ...payload,
+            card_details: null, // Güvenlik için kart bilgilerini API'ye gönderme
+            payment_status: 'PENDING',
+            tiko_order_id: reservationCode
+          };
+
+          const response = await apiClient.post<{ code: string; [key: string]: unknown; }>('/reservations', reservationPayload);
+          
+          if (response.data?.code) {
+            // TIKO 3D Secure sayfasına yönlendir
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = paymentResult.tikoUrl;
+            form.style.display = 'none';
+
+            // Form verilerini ekle
+            Object.entries(paymentResult.formData).forEach(([key, value]) => {
+              const input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = key;
+              input.value = value as string;
+              form.appendChild(input);
+            });
+
+            document.body.appendChild(form);
+            form.submit();
+          } else {
+            throw new Error('Rezervasyon oluşturulamadı');
+          }
         } else {
-          throw new Error('Rezervasyon başarılı ancak yanıt formatı beklenenden farklı.');
+          throw new Error(paymentResult.error || 'Ödeme işlemi başarısız');
         }
       } else { // Diğer ödeme yöntemleri (Havale/EFT) için direkt API çağrısı
         const response = await apiClient.post<{ code: string; [key: string]: unknown; }>('/reservations', payload);
@@ -835,7 +901,7 @@ export default function AracSecimiContent({
                      >
                          <TabsList className="grid w-full grid-cols-2 mb-4">
                            <TabsTrigger value="card">Kredi/Banka Kartı</TabsTrigger>
-                           <TabsTrigger value="transfer">Havale/EFT/Fast</TabsTrigger>
+                           <TabsTrigger value="bank">Havale/EFT/Fast</TabsTrigger>
                          </TabsList>
 
                          <TabsContent value="card" className="space-y-4">
@@ -893,18 +959,18 @@ export default function AracSecimiContent({
                   </div>
                          </TabsContent>
 
-                         <TabsContent value="transfer" className="space-y-4">
+                         <TabsContent value="bank" className="space-y-4">
                             <h3 className="text-lg font-semibold">Havale/EFT/Fast ile Ödeme</h3>
-                            <div className="p-4 border rounded-md bg-gray-50 dark:bg-gray-800/50">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-md border border-gray-200 dark:border-gray-700">
                                <p className="text-sm text-muted-foreground mb-3">
                                  Lütfen aşağıdaki banka hesabına transfer yaparak ödemenizi gerçekleştirin.
                                  Rezervasyonunuz, ödemeniz onaylandıktan sonra kesinleşecektir.
                                  Açıklama kısmına rezervasyon numaranızı yazmayı unutmayın.
                                </p>
                                <div className="space-y-1 text-sm">
-                                 <p><span className="font-medium">Hesap Adı:</span> [Şirket Hesap Adı]</p>
-                                 <p><span className="font-medium">IBAN:</span> TRXX XXXX XXXX XXXX XXXX XXXX</p>
-                                 <p><span className="font-medium">Banka:</span> [Banka Adı]</p>
+                                 <p><strong>Hesap Adı:</strong> Ortaköy Hızlı Transfer İşletmeleri Ltd.</p>
+                                 <p><strong>IBAN:</strong> TR60 0006 2000 4930 0006 2931 55</p>
+                                 <p><strong>Banka:</strong> Garanti Bankası</p>
                                </div>
                             </div>
                          </TabsContent>
