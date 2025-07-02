@@ -1,20 +1,18 @@
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { type NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
-// import { v4 as uuidv4 } from 'uuid'; // Removed unused import
 
-// Initialize Supabase client
+// Supabase İstemcisini Başlatma
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Supabase URL or Anon Key is missing from environment variables.')
-  // Potentially throw an error or handle this case as appropriate
 }
 
 const supabase = createClient(supabaseUrl!, supabaseAnonKey!)
 
-// E-posta gönderim fonksiyonu
+// E-posta gönderim fonksiyonu (rezervasyon API'sinden kopyalandı)
 async function sendReservationConfirmationEmail(reservationData: any, reservationCode: string) {
   try {
     // SMTP Configuration
@@ -42,9 +40,7 @@ async function sendReservationConfirmationEmail(reservationData: any, reservatio
     })
 
     // Ödeme durumuna göre mesaj
-    const paymentStatusMessage = reservationData.payment_method === 'card' 
-      ? '💳 Kredi kartı ile ödeme alınacaktır'
-      : '🏦 Havale/EFT ile ödeme yapabilirsiniz'
+    const paymentStatusMessage = '💳 Kredi kartı ile ödeme alındı - ONAYLANDI'
 
     const emailContent = {
       from: process.env.EMAIL_FROM || process.env.SMTP_USER,
@@ -215,126 +211,248 @@ www.kibrishizlitransfer.com
   }
 }
 
-// Function to generate a short, somewhat readable reservation code
-// function generateReservationCode(): string { // Removed unused function
-// const prefix = "KTR"; // Kibris Transfer Reservation
-// const timestampPart = Date.now().toString().slice(-4); // Last 4 digits of current timestamp
-// const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase(); // 4 random alphanumeric chars
-// return `${prefix}${timestampPart}${randomPart}`;
-// } // Removed unused function generateReservationCode
-
-
 export async function POST(request: NextRequest) {
-  console.log('[API /reservations] POST request received.');
   try {
-    console.log('[API /reservations] Attempting to parse JSON payload...');
-    const payload = await request.json();
-    console.log('[API /reservations] JSON payload parsed successfully.');
+    console.log('[TIKO Callback] Received POST request')
     
-    // LOG THE ENTIRE PAYLOAD BEFORE VALIDATIONS
-    console.log('[API /reservations] Raw payload before validation:', JSON.stringify(payload, null, 2));
+    // TIKO'dan gelen veriyi oku
+    const body = await request.json()
+    console.log('[TIKO Callback] Body:', body)
+    
+    // URL parametrelerini de oku
+    const url = new URL(request.url)
+    const paymentStatus = url.searchParams.get('payment_status')
+    const reservationCode = url.searchParams.get('reservation_code')
+    
+    console.log('[TIKO Callback] URL Params:', { paymentStatus, reservationCode })
+    
+    // Ödeme durumuna göre işlem yap
+    if (reservationCode) {
+      console.log(`[TIKO Callback] Payment ${paymentStatus} for reservation ${reservationCode}`)
+      
+      // Başarılı ödeme durumunda rezervasyon bilgilerini çek ve e-posta gönder
+      if (paymentStatus === 'success') {
+        try {
+          // Rezervasyon bilgilerini Supabase'den çek
+          const { data: reservation, error } = await supabase
+            .from('reservations')
+            .select('*')
+            .eq('code', reservationCode)
+            .single()
 
-    // Validate essential payload parts (basic validation)
-    console.log('[API /reservations] Validating required reservation fields...');
-    if (!payload.pickup_location_id || !payload.dropoff_location_id || !payload.reservation_date || !payload.passenger_count || !payload.vehicle_id) {
-      console.error('[API /reservations] Validation failed: Missing required reservation fields.');
-      return NextResponse.json({ message: 'Missing required reservation fields.' }, { status: 400 });
-    }
+          if (error) {
+            console.error('[TIKO Callback] Rezervasyon bulunamadı:', error)
+          } else if (reservation) {
+            console.log('[TIKO Callback] Rezervasyon bulundu, e-posta gönderiliyor...')
+            
+            // Ödeme durumunu güncelle
+            await supabase
+              .from('reservations')
+              .update({ 
+                status: 'confirmed',
+                payment_status: 'paid'
+              })
+              .eq('code', reservationCode)
 
-    console.log('[API /reservations] Validating required customer fields...');
-    if (!payload.customer_name || !payload.customer_last_name || !payload.customer_email || !payload.customer_phone) {
-        console.error('[API /reservations] Validation failed: Missing required customer fields.');
-        return NextResponse.json({ message: 'Missing required customer fields.' }, { status: 400 });
-    }
-
-    // console.log('[API /reservations] Validating card details if payment method is card...');
-    // if (payload.payment_method === 'card' && (!payload.card_details || !payload.card_details.cardholder_name || !payload.card_details.card_number || !payload.card_details.expiry_date || !payload.card_details.cvc)) {
-    //     console.error('[API /reservations] Validation failed: Missing required card details for card payment.');
-    //     return NextResponse.json({ message: 'Missing required card details for card payment.' }, { status: 400 });
-    // }
-
-    console.log('[API /reservations] Validating presence of reservation code...');
-    // Validate that the client-sent reservation code is present
-    if (!payload.code) {
-      console.error('[API /reservations] Validation failed: Reservation code is missing from payload.');
-      return NextResponse.json({ message: 'Reservation code is missing from payload.' }, { status: 400 });
-    }
-    console.log('[API /reservations] All validations passed.');
-
-    // Use the reservation code from the payload
-    const newReservationCode = payload.code;
-
-    console.log('[API /reservations] Received payload:', payload); // Gelen payload'ı logla
-
-    const reservationData = {
-      pickup_location_id: payload.pickup_location_id,
-      dropoff_location_id: payload.dropoff_location_id,
-      reservation_time: payload.reservation_date, // Changed from reservation_date
-      passenger_count: payload.passenger_count,
-      vehicle_id: payload.vehicle_id, // This is vehicle_id_example from frontend
-      // transfer_type: payload.transfer_type, // Temporarily removed, column not found in DB schema
-      customer_name: payload.customer_name,
-      customer_last_name: payload.customer_last_name,
-      customer_email: payload.customer_email,
-      customer_phone: payload.customer_phone,
-      flight_details: payload.flight_details,
-      notes: payload.notes,
-      total_price: payload.total_price,
-      currency: payload.currency,
-      payment_method: payload.payment_method,
-      card_details: null, // Always set to null to prevent saving card details
-      extras: payload.extras, // Array of {id, name, price}
-      status: payload.status || 'pending_confirmation',
-      code: newReservationCode,
-    };
-
-    console.log('[API /reservations] Processing reservationData:', JSON.stringify(reservationData, null, 2)); // Log the data to be inserted
-
-    const { data, error } = await supabase
-      .from('reservations')
-      .insert([reservationData])
-      .select()
-      .single(); // Assuming you want the inserted row back and expect only one row
-
-    if (error) {
-      console.error('Supabase insert error:', error);
-      // Check for unique constraint violation for CODE, if such constraint exists on CODE column
-      if (error.code === '23505' && error.message.toLowerCase().includes('constraint') && error.message.toLowerCase().includes('code')) {
-        return NextResponse.json({ message: 'Failed to generate a unique reservation code (duplicate). Please try again.' }, { status: 500 });
+            // E-posta gönder
+            sendReservationConfirmationEmail(reservation, reservationCode)
+              .then((success) => {
+                if (success) {
+                  console.log(`[TIKO Callback] ✅ Başarılı ödeme sonrası e-posta gönderildi: ${reservation.customer_email}`)
+                } else {
+                  console.error(`[TIKO Callback] ❌ E-posta gönderilemedi: ${reservation.customer_email}`)
+                }
+              })
+              .catch((error) => {
+                console.error('[TIKO Callback] ❌ E-posta gönderim hatası:', error)
+              })
+          }
+        } catch (error) {
+          console.error('[TIKO Callback] Rezervasyon bilgisi çekme hatası:', error)
+        }
+      } else {
+        console.log('[TIKO Callback] Ödeme başarısız, rezervasyon iptal ediliyor...')
+        
+        // Başarısız ödeme durumunda rezervasyonu iptal et
+        try {
+          await supabase
+            .from('reservations')
+            .update({ 
+              status: 'cancelled',
+              payment_status: 'failed'
+            })
+            .eq('code', reservationCode)
+          
+          console.log(`[TIKO Callback] Rezervasyon iptal edildi: ${reservationCode}`)
+        } catch (error) {
+          console.error('[TIKO Callback] Rezervasyon iptal etme hatası:', error)
+        }
       }
-      return NextResponse.json({ message: 'Error creating reservation in database.', details: error.message }, { status: 500 });
-    }
-
-    if (data) {
-      console.log('[API /reservations] Rezervasyon başarıyla oluşturuldu. E-posta TIKO ödeme onayından sonra gönderilecek.');
-
-      return NextResponse.json({ 
-        message: 'Reservation created successfully!', 
-        code: newReservationCode, // Return the new code
-        reservationId: data.id // Optionally return the DB id
-      }, { status: 201 });
-    } else {
-      // This case should ideally not be reached if insert was successful and .single() was used.
-      return NextResponse.json({ message: 'Reservation created but no data returned from DB.' }, { status: 500 });
-    }
-
-  } catch (error: unknown) { // error: any -> error: unknown
-    console.error('Error processing reservation request:', error);
-    let message = 'An unexpected error occurred.';
-    let details = null;
-
-    if (error instanceof SyntaxError) { // Specific check for JSON parsing error
-        message = 'Invalid request body: Malformed JSON.';
-        // For SyntaxError, error.message is often descriptive enough for details
-        if (error instanceof Error) details = error.message; 
-        return NextResponse.json({ message, details }, { status: 400 });
+      
+      // Kullanıcıyı doğru sayfaya yönlendir
+      const redirectUrl = paymentStatus === 'success' 
+        ? `https://www.kibrishizlitransfer.com/rezervasyon-tamamla?payment_status=success&reservation_code=${reservationCode}`
+        : `https://www.kibrishizlitransfer.com/rezervasyon-tamamla?payment_status=failed&reservation_code=${reservationCode}`
+      
+      // HTML redirect sayfası döndür (TIKO tarayıcıda göstereceği için)
+      return new NextResponse(
+        `<!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Ödeme ${paymentStatus === 'success' ? 'Başarılı' : 'Başarısız'}</title>
+            <script>
+              window.location.href = '${redirectUrl}';
+            </script>
+          </head>
+          <body>
+            <p>Yönlendiriliyorsunuz...</p>
+          </body>
+        </html>`,
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html',
+          },
+        }
+      )
     }
     
-    // General error handling
-    if (error instanceof Error) {
-        message = error.message;
-        // details = error.stack; // Optionally add stack for more debug info
+    // TIKO'nun beklediği şekilde cevap ver
+    return NextResponse.json(
+      { status: 'OK', message: 'Callback received successfully' },
+      { status: 200 }
+    )
+    
+  } catch (error) {
+    console.error('[TIKO Callback] Error:', error)
+    
+    // Hata durumunda da 200 dön (TIKO tekrar denemesin)
+    return NextResponse.json(
+      { status: 'ERROR', message: 'Internal error but acknowledged' },
+      { status: 200 }
+    )
+  }
+}
+
+// GET istekleri için de callback işlemi yap
+export async function GET(request: NextRequest) {
+  try {
+    console.log('[TIKO Callback] Received GET request')
+    
+    // URL parametrelerini oku
+    const url = new URL(request.url)
+    const paymentStatus = url.searchParams.get('payment_status')
+    const reservationCode = url.searchParams.get('reservation_code')
+    
+    console.log('[TIKO Callback] GET Params:', { paymentStatus, reservationCode })
+    
+    // Ödeme durumuna göre işlem yap
+    if (reservationCode) {
+      console.log(`[TIKO Callback] Payment ${paymentStatus} for reservation ${reservationCode}`)
+      
+      // Başarılı ödeme durumunda rezervasyon bilgilerini çek ve e-posta gönder
+      if (paymentStatus === 'success') {
+        try {
+          // Rezervasyon bilgilerini Supabase'den çek
+          const { data: reservation, error } = await supabase
+            .from('reservations')
+            .select('*')
+            .eq('code', reservationCode)
+            .single()
+
+          if (error) {
+            console.error('[TIKO Callback] Rezervasyon bulunamadı:', error)
+          } else if (reservation) {
+            console.log('[TIKO Callback] Rezervasyon bulundu, e-posta gönderiliyor...')
+            
+            // Ödeme durumunu güncelle
+            await supabase
+              .from('reservations')
+              .update({ 
+                status: 'confirmed',
+                payment_status: 'paid'
+              })
+              .eq('code', reservationCode)
+
+            // E-posta gönder
+            sendReservationConfirmationEmail(reservation, reservationCode)
+              .then((success) => {
+                if (success) {
+                  console.log(`[TIKO Callback] ✅ Başarılı ödeme sonrası e-posta gönderildi: ${reservation.customer_email}`)
+                } else {
+                  console.error(`[TIKO Callback] ❌ E-posta gönderilemedi: ${reservation.customer_email}`)
+                }
+              })
+              .catch((error) => {
+                console.error('[TIKO Callback] ❌ E-posta gönderim hatası:', error)
+              })
+          }
+        } catch (error) {
+          console.error('[TIKO Callback] Rezervasyon bilgisi çekme hatası:', error)
+        }
+      } else {
+        console.log('[TIKO Callback] Ödeme başarısız, rezervasyon iptal ediliyor...')
+        
+        // Başarısız ödeme durumunda rezervasyonu iptal et
+        try {
+          await supabase
+            .from('reservations')
+            .update({ 
+              status: 'cancelled',
+              payment_status: 'failed'
+            })
+            .eq('code', reservationCode)
+          
+          console.log(`[TIKO Callback] Rezervasyon iptal edildi: ${reservationCode}`)
+        } catch (error) {
+          console.error('[TIKO Callback] Rezervasyon iptal etme hatası:', error)
+        }
+      }
+      
+      // Kullanıcıyı doğru sayfaya yönlendir
+      const redirectUrl = paymentStatus === 'success' 
+        ? `/rezervasyon-tamamla?payment_status=success&reservation_code=${reservationCode}`
+        : `/rezervasyon-tamamla?payment_status=failed&reservation_code=${reservationCode}`
+      
+      // HTML redirect sayfası döndür
+      return new NextResponse(
+        `<!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Ödeme ${paymentStatus === 'success' ? 'Başarılı' : 'Başarısız'}</title>
+            <script>
+              window.location.href = '${redirectUrl}';
+            </script>
+          </head>
+          <body>
+            <p>Yönlendiriliyorsunuz...</p>
+            <p>Ödeme Durumu: ${paymentStatus === 'success' ? 'Başarılı' : 'Başarısız'}</p>
+            <p>Rezervasyon Kodu: ${reservationCode}</p>
+          </body>
+        </html>`,
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/html',
+          },
+        }
+      )
     }
-    return NextResponse.json({ message, details }, { status: 500 });
+    
+    // Parametreler eksikse basit mesaj döndür
+    return NextResponse.json(
+      { status: 'OK', message: 'TIKO callback endpoint - parameters missing' },
+      { status: 200 }
+    )
+    
+  } catch (error) {
+    console.error('[TIKO Callback] GET Error:', error)
+    
+    return NextResponse.json(
+      { status: 'ERROR', message: 'Internal error' },
+      { status: 500 }
+    )
   }
 } 

@@ -30,13 +30,23 @@ const vehicles = [
   },
   {
     id: 3,
-    name: 'Sedan Araç (Örn: Passat)',
-    type: 'Sedan',
+    name: 'Mercedes S Class',
+    type: 'Luxury Sedan',
     capacity: 3,
-    luggage: '2-3 Orta Boy Valiz',
-    features: ['Klima', 'Ekonomik Seçenek', 'Konforlu Sürüş'],
-    imageUrl: '', // No image available yet
-    priceRange: '700 - 1000 TRY',
+    luggage: '2-3 Büyük Boy Valiz',
+    features: ['Premium Klima', 'Deri Koltuklar', 'VIP Konfor'],
+    imageUrl: '/mercedes_s_class.jpeg',
+    priceRange: '1200 - 1800 TRY',
+  },
+  {
+    id: 4,
+    name: 'Range Rover Vogue',
+    type: 'Luxury SUV',
+    capacity: 4,
+    luggage: '3-4 Büyük Boy Valiz',
+    features: ['Premium Klima', 'Deri Koltuklar', 'VIP Konfor', 'Yüksek Sürüş Konumu'],
+    imageUrl: '/range_rover.jpeg',
+    priceRange: '1500 - 2200 TRY',
   },
   // Add more vehicles as needed
 ];
@@ -92,7 +102,6 @@ export default function AraclarPage() {
               </div>
               
               <div className="mt-auto">
-                <p className="text-lg font-semibold text-gray-800 mb-3">{vehicle.priceRange}</p>
                 <Button 
                   className="w-full bg-blue-600 hover:bg-blue-700"
                   onClick={() => window.location.href = '/'} // Redirect to homepage or booking page

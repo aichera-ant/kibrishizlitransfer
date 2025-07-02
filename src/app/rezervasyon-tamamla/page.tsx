@@ -74,8 +74,8 @@ function ReservationCompleteContent() {
             setLoading(true);
             setError(null);
             try {
-                const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
-                const response = await fetch(`${apiBaseUrl}/reservations/code/${reservationCode}`);
+                const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000/api';
+                const response = await fetch(`${apiBaseUrl}/reservations/${reservationCode}`);
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({ message: response.statusText }));
                     throw new Error(errorData.message || `HTTP error! status: ${response.status}`);

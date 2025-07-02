@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { AlertTriangle, Car, Users, Check, CreditCard, Loader2, Ticket, Timer } from 'lucide-react'
 import { ReservationSummary } from '@/components/reservation-summary'
@@ -94,6 +94,10 @@ const getVehicleImageUrl = (vehicleType: string): string | null => {
     return '/mercedes-vito-siyah.jpg'; 
   } else if (normalizedVehicleType.includes('sprinter')) {
     return '/mercedes-sprinter-siyah.jpg'; 
+  } else if (normalizedVehicleType.includes('sclass') || normalizedVehicleType.includes('s-class') || normalizedVehicleType.includes('s_class') || normalizedVehicleType.includes('mercedesclass')) {
+    return '/mercedes_s_class.jpeg';
+  } else if (normalizedVehicleType.includes('range') || normalizedVehicleType.includes('rover') || normalizedVehicleType.includes('rangerover')) {
+    return '/range_rover.jpeg';
   }
   return null;
 };
@@ -183,6 +187,12 @@ export default function AracSecimiContent({
   const [isCodeExpired, setIsCodeExpired] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card'); // Default to card
   const [reservationCode, setReservationCode] = useState<string | null>(null); // State for reservation code
+  const [availableExtras, setAvailableExtras] = useState<Extra[]>([]);
+  const [paymentRedirectInfo, setPaymentRedirectInfo] = useState<{
+    show: boolean;
+    message: string;
+    countdown: number;
+  }>({ show: false, message: '', countdown: 0 });
 
   const initialFormData = useMemo(() => ({
     firstName: '',
@@ -560,8 +570,9 @@ export default function AracSecimiContent({
             userAddress: ''
           },
           urls: {
-            urlOk: `${window.location.origin}/rezervasyon-tamamla?payment_status=success&reservation_code=${reservationCode}`,
-            urlFail: `${window.location.origin}/rezervasyon-tamamla?payment_status=failed&reservation_code=${reservationCode}`
+            // TIKO callback için API endpoint kullan
+            urlOk: `https://www.kibrishizlitransfer.com/api/tiko-callback?payment_status=success&reservation_code=${reservationCode}`,
+            urlFail: `https://www.kibrishizlitransfer.com/api/tiko-callback?payment_status=failed&reservation_code=${reservationCode}`
           },
           description: `${searchParams.pickupLocationName} - ${searchParams.dropoffLocationName} Transfer`
         };
@@ -569,6 +580,8 @@ export default function AracSecimiContent({
         // Supabase Edge Function'a istek gönder
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://uxwzfghgqldhkkzsrlfu.supabase.co';
         const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV4d3pmZ2hncWxkaGtrenNybGZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU3ODE2MTgsImV4cCI6MjA2MTM1NzYxOH0.xAEZEE7zBqjcSDzREFFty5hHYSKLMVNRDTaFsHjTU9I';
+        
+        console.log('[handleSubmit] Calling Edge Function with payload:', paymentData);
         
         const paymentResponse = await fetch(`${supabaseUrl}/functions/v1/payment-process`, {
           method: 'POST',
@@ -579,13 +592,28 @@ export default function AracSecimiContent({
           body: JSON.stringify(paymentData)
         });
 
+        console.log('[handleSubmit] Edge Function response status:', paymentResponse.status);
+        
         if (!paymentResponse.ok) {
+          const errorText = await paymentResponse.text();
+          console.error('[handleSubmit] Edge Function error:', errorText);
           throw new Error('Ödeme işlemi başlatılamadı');
         }
 
         const paymentResult = await paymentResponse.json();
+        console.log('[handleSubmit] Edge Function result:', paymentResult);
+        console.log('[handleSubmit] paymentResult.success:', paymentResult.success);
+        console.log('[handleSubmit] paymentResult.tikoUrl:', paymentResult.tikoUrl);
+        console.log('[handleSubmit] paymentResult.formData keys:', Object.keys(paymentResult.formData || {}));
         
-        if (paymentResult.success) {
+        if (paymentResult.success && paymentResult.tikoUrl && paymentResult.formData) {
+          console.log('[handleSubmit] TIKO URL validation:', {
+            url: paymentResult.tikoUrl,
+            isValidUrl: paymentResult.tikoUrl.includes('tikokart.com'),
+            isSandbox: paymentResult.tikoUrl.includes('sandbox'),
+            formDataSize: Object.keys(paymentResult.formData).length
+          });
+          
           // Önce rezervasyonu oluştur (ödeme pending durumunda)
           const reservationPayload = {
             ...payload,
@@ -597,28 +625,87 @@ export default function AracSecimiContent({
           const response = await apiClient.post<{ code: string; [key: string]: unknown; }>('/reservations', reservationPayload);
           
           if (response.data?.code) {
-            // TIKO 3D Secure sayfasına yönlendir
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = paymentResult.tikoUrl;
-            form.style.display = 'none';
-
-            // Form verilerini ekle
-            Object.entries(paymentResult.formData).forEach(([key, value]) => {
-              const input = document.createElement('input');
-              input.type = 'hidden';
-              input.name = key;
-              input.value = value as string;
-              form.appendChild(input);
+            // 3D Secure yönlendirme bilgilendirmesi göster
+            setPaymentRedirectInfo({
+              show: true,
+              message: '3D Secure doğrulama için banka sayfasına yönlendiriliyorsunuz...',
+              countdown: 3
             });
+            
+            // 3 saniye geri sayım
+            let count = 3;
+            const countdownInterval = setInterval(() => {
+              count--;
+              setPaymentRedirectInfo(prev => ({ ...prev, countdown: count }));
+              
+              if (count <= 0) {
+                clearInterval(countdownInterval);
+                
+                console.log('[handleSubmit] Countdown finished, redirecting to TIKO...');
+                console.log('[handleSubmit] TIKO URL:', paymentResult.tikoUrl);
+                console.log('[handleSubmit] Form Data:', paymentResult.formData);
+                
+                // Modal'ı gizle
+                setPaymentRedirectInfo({ show: false, message: '', countdown: 0 });
+                
+                // Kısa bir bekleme süresi ekle (modal'ın kapanması için)
+                setTimeout(() => {
+                  // TIKO 3D Secure sayfasına yönlendir
+                  const form = document.createElement('form');
+                  form.method = 'POST';
+                  form.action = paymentResult.tikoUrl;
+                  form.style.display = 'none';
+                  form.target = '_self'; // Aynı sekmede aç
 
-            document.body.appendChild(form);
-            form.submit();
+                  // Form verilerini ekle
+                  console.log('[handleSubmit] Processing form data:', paymentResult.formData);
+                  Object.entries(paymentResult.formData).forEach(([key, value]) => {
+                    console.log(`[handleSubmit] Adding form field: ${key} = ${value}`);
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = key;
+                    input.value = value as string;
+                    form.appendChild(input);
+                  });
+                  
+                  // Tüm form alanlarını tekrar logla
+                  console.log('[handleSubmit] Final form fields:');
+                  for (let i = 0; i < form.elements.length; i++) {
+                    const element = form.elements[i] as HTMLInputElement;
+                    console.log(`  ${element.name} = ${element.value}`);
+                  }
+
+                  document.body.appendChild(form);
+                  console.log('[handleSubmit] Form created and appended, submitting...');
+                  console.log('[handleSubmit] Form action:', form.action);
+                  console.log('[handleSubmit] Form method:', form.method);
+                  console.log('[handleSubmit] Form children count:', form.children.length);
+                  
+                  // Form'u submit et
+                  try {
+                    console.log('[handleSubmit] About to submit form to:', form.action);
+                    form.submit();
+                    console.log('[handleSubmit] Form submitted successfully!');
+                    
+                    // Debug: Form submission'dan sonra kısa bir alert (üretimde kaldırılacak)
+                    setTimeout(() => {
+                      console.log('[handleSubmit] Form submission completed, checking if still on same page...');
+                    }, 1000);
+                  } catch (error) {
+                    console.error('[handleSubmit] Form submission error:', error);
+                    setPaymentRedirectInfo({ show: false, message: '', countdown: 0 });
+                    setSubmitError('3D Secure sayfasına yönlendirme başarısız oldu. Lütfen tekrar deneyin.');
+                    setIsSubmitting(false);
+                  }
+                }, 100); // 100ms bekleme
+              }
+            }, 1000);
           } else {
             throw new Error('Rezervasyon oluşturulamadı');
           }
         } else {
-          throw new Error(paymentResult.error || 'Ödeme işlemi başarısız');
+          console.error('[handleSubmit] Payment processing failed:', paymentResult);
+          throw new Error(paymentResult.error || 'Ödeme işlemi başarısız - Edge Function yanıtı geçersiz');
         }
       } else { // Diğer ödeme yöntemleri (Havale/EFT) için direkt API çağrısı
         const response = await apiClient.post<{ code: string; [key: string]: unknown; }>('/reservations', payload);
@@ -723,6 +810,36 @@ export default function AracSecimiContent({
 
   return (
     <div className="container mx-auto px-4 pt-24 pb-8">
+      {/* 3D Secure Yönlendirme Ekranı */}
+      {paymentRedirectInfo.show && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 p-3 bg-blue-100 dark:bg-blue-900/30 rounded-full w-fit">
+                <CreditCard className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <CardTitle className="text-xl mb-2">3D Secure Doğrulama</CardTitle>
+              <CardDescription className="text-base">
+                {paymentRedirectInfo.message}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center space-y-4">
+              <div className="text-6xl font-bold text-primary">
+                {paymentRedirectInfo.countdown}
+              </div>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>• Açılacak sayfada kredi kartınızın 3D Secure şifresini girin</p>
+                <p>• İşlem tamamlandığında otomatik olarak sitemize döneceksiniz</p>
+                <p>• Sayfayı kapatmayın ve bekleyin</p>
+              </div>
+              <div className="flex justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
           {!isEditingLocked && (
